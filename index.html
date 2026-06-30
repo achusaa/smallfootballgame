@@ -1,0 +1,2099 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>⚽ 点球大战 - 在线对战</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    /* ===== 全局样式 ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0e1a;
+      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      overflow-x: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      min-height: 100vh;
+    }
+    #app {
+      width: 100%;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ===== 通用隐藏类 (必须用 !important 覆盖 ID 选择器的 display) ===== */
+    .hidden { display: none !important; }
+
+    /* ===== 屏幕切换 ===== */
+    .screen { width: 100%; max-width: 900px; display: flex; flex-direction: column; align-items: center; }
+    .screen.hidden { display: none; }
+
+    /* ===== 按钮通用 ===== */
+    .game-btn {
+      padding: 14px 36px;
+      font-size: 17px;
+      font-weight: 700;
+      border: 2px solid;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      letter-spacing: 1px;
+      background: transparent;
+      touch-action: manipulation;
+    }
+    .game-btn:hover { transform: translateY(-2px); }
+    .game-btn:active { transform: translateY(0); }
+    .btn-primary { border-color: #22d3ee; color: #22d3ee; box-shadow: 0 0 20px rgba(34,211,238,0.2); }
+    .btn-primary:hover { background: rgba(34,211,238,0.12); box-shadow: 0 0 30px rgba(34,211,238,0.4); }
+    .btn-secondary { border-color: #94a3b8; color: #94a3b8; }
+    .btn-secondary:hover { background: rgba(148,163,184,0.12); color: #e2e8f0; }
+    .btn-danger { border-color: #f87171; color: #f87171; }
+    .btn-danger:hover { background: rgba(248,113,113,0.12); }
+    .btn-shooter { border-color: #38bdf8; color: #38bdf8; }
+    .btn-shooter:hover { background: rgba(56,189,248,0.12); box-shadow: 0 0 25px rgba(56,189,248,0.3); }
+    .btn-keeper { border-color: #fbbf24; color: #fbbf24; }
+    .btn-keeper:hover { background: rgba(251,191,36,0.12); box-shadow: 0 0 25px rgba(251,191,36,0.3); }
+
+    /* ===== 主菜单 ===== */
+    .menu-title {
+      font-size: clamp(32px, 6vw, 52px);
+      font-weight: 900;
+      background: linear-gradient(135deg, #38bdf8, #fbbf24);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+      text-align: center;
+    }
+    .menu-subtitle { color: #64748b; font-size: 13px; margin-bottom: 30px; letter-spacing: 2px; text-align: center; }
+    .menu-btn-group { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+
+    /* ===== 房间链接 ===== */
+    .link-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 4px;
+      max-width: 100%;
+    }
+    .link-box input {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 12px;
+      padding: 8px 10px;
+      flex: 1;
+      min-width: 0;
+      outline: none;
+      font-family: monospace;
+    }
+    .copy-btn {
+      background: rgba(34,211,238,0.15);
+      border: 1px solid rgba(34,211,238,0.3);
+      color: #22d3ee;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { background: rgba(34,211,238,0.25); }
+
+    /* ===== 连接状态 ===== */
+    .conn-status {
+      font-size: 14px;
+      padding: 8px 16px;
+      border-radius: 20px;
+      margin: 12px 0;
+    }
+    .conn-status.connecting { color: #fbbf24; background: rgba(251,191,36,0.1); }
+    .conn-status.connected { color: #4ade80; background: rgba(74,222,128,0.1); }
+    .conn-status.error { color: #f87171; background: rgba(248,113,113,0.1); }
+
+    /* ===== 倒计时覆盖 ===== */
+    #countdown-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(5,10,25,0.7);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+    }
+    #countdown-overlay.hidden { display: none; }
+    .countdown-number {
+      font-size: 120px;
+      font-weight: 900;
+      color: #22d3ee;
+      text-shadow: 0 0 60px rgba(34,211,238,0.5);
+      animation: countdownPulse 1s ease-out;
+    }
+    @keyframes countdownPulse {
+      0% { transform: scale(2); opacity: 0; }
+      30% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(0.8); opacity: 0; }
+    }
+
+    /* ===== 游戏画面 ===== */
+    #game-screen { width: 100%; max-width: 900px; }
+    #canvas-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 2;
+      max-width: 900px;
+      margin: 0 auto;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    #game-canvas { width: 100%; height: 100%; display: block; }
+
+    /* ===== 计分栏 ===== */
+    #score-bar {
+      width: 100%;
+      max-width: 900px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%);
+    }
+    .score-box { display: flex; align-items: center; gap: 8px; }
+    .score-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+    .score-value { font-size: 24px; font-weight: 900; }
+    .score-shooter { color: #38bdf8; }
+    .score-keeper { color: #fbbf24; }
+    .round-info { color: #e2e8f0; font-size: 13px; font-weight: 600; text-align: center; }
+    .round-dots { display: flex; gap: 3px; margin-top: 2px; justify-content: center; }
+    .round-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.12); }
+    .round-dot.shooter-scored { background: #38bdf8; }
+    .round-dot.keeper-saved { background: #fbbf24; }
+    .round-dot.miss { background: #64748b; }
+    .round-dot.current { border: 2px solid #fff; }
+
+    /* ===== 连接指示器 ===== */
+    #conn-indicator {
+      position: absolute;
+      top: 8px; right: 10px;
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.6);
+      z-index: 50;
+      pointer-events: none;
+    }
+    #conn-indicator .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+    .dot-green { background: #4ade80; }
+    .dot-yellow { background: #fbbf24; }
+    .dot-red { background: #f87171; }
+
+    /* ===== 射门指示器 ===== */
+    #aim-indicator {
+      position: absolute;
+      top: 50px; right: 10px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(56,189,248,0.3);
+      border-radius: 6px;
+      padding: 6px 10px;
+      z-index: 50;
+      pointer-events: none;
+      font-size: 11px;
+      color: #e2e8f0;
+    }
+    #aim-indicator .indicator-row { display: flex; justify-content: space-between; gap: 10px; margin: 2px 0; }
+    #aim-indicator .indicator-label { color: #94a3b8; }
+    .angle-bar { width: 60px; height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; position: relative; margin-top: 3px; }
+    .angle-bar-fill { position: absolute; top: 0; height: 100%; background: #38bdf8; border-radius: 3px; transition: all 0.1s; }
+    #aim-indicator.hidden { display: none; }
+
+    /* ===== 飘字特效 ===== */
+    .float-text {
+      position: absolute;
+      top: 40%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(40px, 8vw, 64px);
+      font-weight: 900;
+      z-index: 60;
+      pointer-events: none;
+      animation: floatPop 1.5s ease-out forwards;
+    }
+    @keyframes floatPop {
+      0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+      20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+      80% { transform: translate(-50%, -120%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -180%) scale(0.8); opacity: 0; }
+    }
+
+    /* ===== 触摸控制 ===== */
+    .touch-controls {
+      display: none;
+      width: 100%;
+      max-width: 900px;
+      padding: 10px;
+      gap: 8px;
+    }
+    .touch-controls.active { display: grid; }
+    .touch-btn {
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      color: #e2e8f0;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 16px 8px;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: all 0.1s;
+      text-align: center;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .touch-btn:active, .touch-btn.pressed {
+      background: rgba(34,211,238,0.2);
+      border-color: rgba(34,211,238,0.5);
+      transform: scale(0.95);
+    }
+    .touch-btn.kick-btn {
+      background: rgba(56,189,248,0.15);
+      border-color: rgba(56,189,248,0.4);
+      color: #38bdf8;
+      font-size: 20px;
+      padding: 20px;
+    }
+    .touch-btn.kick-btn:active {
+      background: rgba(56,189,248,0.35);
+      transform: scale(0.92);
+    }
+    .touch-btn.dive-btn {
+      background: rgba(251,191,36,0.1);
+      border-color: rgba(251,191,36,0.3);
+      color: #fbbf24;
+    }
+    .touch-btn.dive-btn:active {
+      background: rgba(251,191,36,0.25);
+    }
+    #touch-shooter { grid-template-columns: 1fr 1fr 1fr; }
+    #touch-shooter .kick-btn { grid-column: 1 / -1; }
+    #touch-keeper { grid-template-columns: 1fr 1fr 1fr; }
+    #touch-keeper .quick-btn { grid-column: 1 / -1; }
+
+    /* ===== 键盘提示（桌面端） ===== */
+    .keyboard-hints {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 16px;
+      font-size: 12px;
+    }
+    .keyboard-hints.hidden { display: none; }
+    .hint-panel {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #cbd5e1;
+    }
+    .hint-panel h4 { font-size: 12px; margin-bottom: 2px; }
+    .hint-panel.shooter h4 { color: #38bdf8; }
+    .hint-panel.keeper h4 { color: #fbbf24; }
+    .key-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 3px;
+      padding: 0 5px;
+      font-family: monospace;
+      font-size: 10px;
+      margin: 0 1px;
+    }
+
+    /* ===== 结束弹窗 ===== */
+    #gameover-screen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(5,10,25,0.92);
+      backdrop-filter: blur(8px);
+      z-index: 150;
+    }
+    .result-card {
+      background: rgba(15,23,42,0.95);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 30px 50px;
+      text-align: center;
+    }
+    .winner-text { font-size: 30px; font-weight: 900; margin: 12px 0; }
+    .final-score { font-size: 42px; font-weight: 900; color: #e2e8f0; margin: 8px 0 20px; }
+
+    /* ===== 断线弹窗 ===== */
+    #disconnect-modal {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(5,10,25,0.92);
+      backdrop-filter: blur(8px);
+      z-index: 180;
+    }
+
+    /* ===== 音效开关 ===== */
+    #sound-toggle {
+      position: fixed;
+      top: 12px; right: 12px;
+      z-index: 55;
+      cursor: pointer;
+      font-size: 20px;
+      opacity: 0.5;
+      transition: opacity 0.2s;
+    }
+    #sound-toggle:hover { opacity: 1; }
+
+    /* ===== 角色选择卡片 ===== */
+    .role-cards { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; margin: 20px 0; }
+    .role-card {
+      width: 200px;
+      padding: 30px 20px;
+      border: 2px solid;
+      border-radius: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: rgba(255,255,255,0.03);
+    }
+    .role-card:hover { transform: translateY(-4px); }
+    .role-card.shooter { border-color: rgba(56,189,248,0.3); }
+    .role-card.shooter:hover { border-color: #38bdf8; box-shadow: 0 0 30px rgba(56,189,248,0.2); background: rgba(56,189,248,0.05); }
+    .role-card.keeper { border-color: rgba(251,191,36,0.3); }
+    .role-card.keeper:hover { border-color: #fbbf24; box-shadow: 0 0 30px rgba(251,191,36,0.2); background: rgba(251,191,36,0.05); }
+    .role-card .role-icon { font-size: 48px; margin-bottom: 10px; }
+    .role-card .role-name { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
+    .role-card.shooter .role-name { color: #38bdf8; }
+    .role-card.keeper .role-name { color: #fbbf24; }
+    .role-card .role-desc { font-size: 13px; color: #64748b; }
+
+    /* ===== 房间输入框 ===== */
+    .room-input {
+      background: rgba(255,255,255,0.05);
+      border: 2px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: #e2e8f0;
+      font-size: 15px;
+      font-family: monospace;
+      text-align: center;
+      outline: none;
+      width: 280px;
+      margin-bottom: 12px;
+    }
+    .room-input:focus { border-color: #22d3ee; }
+
+    /* ===== QR 码区域 ===== */
+    #qr-container { margin: 12px 0; }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 600px) {
+      .menu-title { font-size: 32px; }
+      .role-cards { flex-direction: column; gap: 12px; }
+      .role-card { width: 100%; max-width: 280px; padding: 20px; }
+      .result-card { padding: 25px 30px; margin: 0 15px; }
+      .keyboard-hints { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 音效开关 ===== -->
+  <div id="sound-toggle" title="音效开关">🔊</div>
+
+  <!-- ===== 主菜单 ===== -->
+  <div id="lobby-screen" class="screen" style="justify-content:center; min-height:100vh;">
+    <div class="menu-title">⚽ 点球大战</div>
+    <div class="menu-subtitle">PENALTY SHOOTOUT · 在线对战</div>
+    <div class="menu-btn-group">
+      <button class="game-btn btn-primary" onclick="Lobby.startCreate()">创建房间</button>
+      <button class="game-btn btn-secondary" onclick="Lobby.showJoin()">加入房间</button>
+      <button class="game-btn btn-secondary" onclick="Game.startLocal()">本地双人</button>
+    </div>
+    <div style="margin-top:25px; color:#475569; font-size:11px; text-align:center; line-height:1.6">
+      创建房间后选择角色，将邀请链接发给好友<br>
+      好友打开链接即可自动加入对战
+    </div>
+  </div>
+
+  <!-- ===== 角色选择 ===== -->
+  <div id="role-screen" class="screen hidden" style="justify-content:center; min-height:100vh;">
+    <h2 style="color:#e2e8f0; font-size:24px; margin-bottom:8px">选择你的角色</h2>
+    <p style="color:#64748b; font-size:13px; margin-bottom:10px">对方将自动分配为另一方</p>
+    <div class="role-cards">
+      <div class="role-card shooter" onclick="Lobby.selectRole('shooter')">
+        <div class="role-icon">🔵</div>
+        <div class="role-name">射手</div>
+        <div class="role-desc">进攻方<br>控制角度和力度<br>踢出精彩进球</div>
+      </div>
+      <div class="role-card keeper" onclick="Lobby.selectRole('keeper')">
+        <div class="role-icon">🟡</div>
+        <div class="role-name">门将</div>
+        <div class="role-desc">防守方<br>左右移动扑救<br>飞扑下地拦截</div>
+      </div>
+    </div>
+    <button class="game-btn btn-secondary" onclick="Lobby.backToMenu()" style="margin-top:15px">返回</button>
+  </div>
+
+  <!-- ===== 等待对手 ===== -->
+  <div id="waiting-screen" class="screen hidden" style="justify-content:center; min-height:100vh; padding:20px;">
+    <h2 style="color:#e2e8f0; font-size:22px; margin-bottom:6px">⏳ 等待对手加入</h2>
+    <p style="color:#64748b; font-size:13px; margin-bottom:20px">将下方链接发给好友，或让他们输入房间码</p>
+    <div style="width:100%; max-width:420px;">
+      <div class="link-box" style="margin-bottom:12px">
+        <input id="invite-link-input" readonly>
+        <button class="copy-btn" onclick="Lobby.copyLink()">复制链接</button>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
+        <div style="flex:1; height:1px; background:rgba(255,255,255,0.1)"></div>
+        <span style="color:#475569; font-size:11px">或手动输入房间码</span>
+        <div style="flex:1; height:1px; background:rgba(255,255,255,0.1)"></div>
+      </div>
+      <div style="text-align:center; margin-bottom:16px">
+        <div style="color:#64748b; font-size:12px; margin-bottom:4px">房间码</div>
+        <div id="room-code-display" style="color:#22d3ee; font-size:20px; font-weight:800; font-family:monospace; letter-spacing:2px"></div>
+        <button class="copy-btn" onclick="Lobby.copyRoomCode()" style="margin-top:8px">复制房间码</button>
+      </div>
+    </div>
+    <div id="waiting-conn-status" class="conn-status connecting">⏳ 等待连接...</div>
+    <button class="game-btn btn-danger" onclick="Lobby.cancelWaiting()" style="margin-top:15px">取消</button>
+  </div>
+
+  <!-- ===== 加入房间 ===== -->
+  <div id="join-screen" class="screen hidden" style="justify-content:center; min-height:100vh;">
+    <h2 style="color:#e2e8f0; font-size:24px; margin-bottom:8px">加入房间</h2>
+    <p style="color:#64748b; font-size:13px; margin-bottom:20px">输入好友发来的房间码</p>
+    <input class="room-input" id="join-room-id" placeholder="输入房间码" maxlength="36">
+    <button class="game-btn btn-primary" onclick="Lobby.doJoin()" style="margin-bottom:12px">连接</button>
+    <div id="join-conn-status" class="conn-status hidden"></div>
+    <button class="game-btn btn-secondary" onclick="Lobby.backToMenu()" style="margin-top:10px">返回</button>
+  </div>
+
+  <!-- ===== 倒计时 ===== -->
+  <div id="countdown-overlay" class="hidden">
+    <div class="countdown-number" id="countdown-number">3</div>
+  </div>
+
+  <!-- ===== 游戏画面 ===== -->
+  <div id="game-screen" class="screen hidden">
+    <!-- 计分栏 -->
+    <div id="score-bar">
+      <div class="score-box">
+        <span class="score-label">射手</span>
+        <span class="score-value score-shooter" id="shooter-score">0</span>
+      </div>
+      <div>
+        <div class="round-info">第 <span id="current-round">1</span> / 10 轮</div>
+        <div class="round-dots" id="round-dots"></div>
+      </div>
+      <div class="score-box">
+        <span class="score-value score-keeper" id="keeper-score">0</span>
+        <span class="score-label">门将</span>
+      </div>
+    </div>
+
+    <!-- Canvas 容器 -->
+    <div id="canvas-container">
+      <canvas id="game-canvas" width="900" height="600"></canvas>
+      <div id="conn-indicator"><span class="dot dot-green"></span><span id="conn-text">已连接</span></div>
+      <div id="aim-indicator" class="hidden">
+        <div class="indicator-row"><span class="indicator-label">角度</span><span id="aim-angle-text">0°</span></div>
+        <div class="angle-bar"><div class="angle-bar-fill" id="angle-bar-fill" style="left:50%; width:0%"></div></div>
+        <div class="indicator-row" style="margin-top:5px"><span class="indicator-label">高度</span><span id="aim-height-text">低球</span></div>
+      </div>
+    </div>
+
+    <!-- 触摸控制 - 射手 -->
+    <div id="touch-shooter" class="touch-controls">
+      <button class="touch-btn" data-action="aim_left">◀ 左</button>
+      <button class="touch-btn" data-action="toggle_height">高低切换</button>
+      <button class="touch-btn" data-action="aim_right">右 ▶</button>
+      <button class="touch-btn kick-btn" data-action="kick">⚽ 射门!</button>
+    </div>
+
+    <!-- 触摸控制 - 门将 -->
+    <div id="touch-keeper" class="touch-controls">
+      <button class="touch-btn" data-action="move_left">◀ 左移</button>
+      <button class="touch-btn dive-btn" data-action="dive_up">飞扑</button>
+      <button class="touch-btn" data-action="move_right">右移 ▶</button>
+      <button class="touch-btn dive-btn" data-action="dive_down">下地</button>
+      <button class="touch-btn quick-btn" data-action="quick_dive">⚡ 加速扑救</button>
+    </div>
+
+    <!-- 键盘提示（桌面端） -->
+    <div class="keyboard-hints" id="keyboard-hints">
+      <div class="hint-panel shooter">
+        <h4>🔵 射手</h4>
+        <div><span class="key-badge">A</span><span class="key-badge">D</span> 角度 <span class="key-badge">W</span> 高低 <span class="key-badge">Space</span> 射门</div>
+      </div>
+      <div class="hint-panel keeper">
+        <h4>🟡 门将</h4>
+        <div><span class="key-badge">←</span><span class="key-badge">→</span> 移动 <span class="key-badge">↑</span> 飞扑 <span class="key-badge">↓</span> 下地 <span class="key-badge">Shift</span> 加速</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 游戏结束 ===== -->
+  <div id="gameover-screen" class="hidden">
+    <div class="result-card">
+      <div style="color:#64748b; font-size:13px; letter-spacing:2px">比赛结束</div>
+      <div class="winner-text" id="winner-text"></div>
+      <div class="final-score" id="final-score"></div>
+      <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap">
+        <button class="game-btn btn-primary" id="restart-btn" onclick="Game.restart()">再来一局</button>
+        <button class="game-btn btn-secondary" onclick="Lobby.backToMenu()">返回菜单</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 断线弹窗 ===== -->
+  <div id="disconnect-modal" class="hidden">
+    <div class="result-card">
+      <div style="font-size:40px; margin-bottom:10px">📡</div>
+      <h2 style="color:#e2e8f0; font-size:22px; margin-bottom:8px">连接已断开</h2>
+      <p style="color:#64748b; font-size:14px; margin-bottom:20px">对手已离开或网络中断</p>
+      <button class="game-btn btn-primary" onclick="Lobby.backToMenu()">返回菜单</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/**
+ * ========================================================================
+ *  点球大战 - 在线对战版  (HTML5 Canvas + PeerJS P2P)
+ * ========================================================================
+ *  架构:
+ *    - PeerJS (WebRTC P2P) 实现零服务器在线对战
+ *    - Host 权威模型: 房主运行完整模拟, 每帧发送状态快照
+ *    - Guest 发送输入指令, 接收并渲染 Host 状态
+ *    - 触摸控制映射到与键盘相同的输入标志位
+ *
+ *  模块索引:
+ *    1.  CONFIG          — 配置常量
+ *    2.  STATE           — 游戏状态枚举
+ *    3.  NetSync         — P2P 连接 & 消息协议
+ *    4.  Lobby           — 房间系统 (创建/加入/角色选择/邀请链接)
+ *    5.  Input           — 键盘输入 (本地)
+ *    6.  TouchControls   — 触摸按钮 → 输入标志映射
+ *    7.  RemoteInput     — 网络输入 (Guest 的输入存储)
+ *    8.  Game            — 状态机 & 回合管理
+ *    9.  Shooter         — 射手 (接受统一输入参数)
+ *   10.  Keeper          — 门将 (接受统一输入参数)
+ *   11.  Ball            — 足球物理
+ *   12.  Collision       — 碰撞检测
+ *   13.  Score           — 计分 & 回合逻辑
+ *   14.  Effects         — 视觉特效
+ *   15.  Render          — Canvas 渲染
+ *   16.  UI              — DOM 界面
+ *   17.  SoundFX         — 音效 (Web Audio API)
+ *   18.  GameLoop        — 主循环 (Host/Guest/Local 三模式)
+ *
+ *  消息协议:
+ *    Host → Guest:  {t:'countdown',n:3} / {t:'start'} / {t:'sync',...} /
+ *                   {t:'gameover',...} / {t:'restart'} / {t:'role',role:...}
+ *    Guest → Host:  {t:'ready',role:...} / {t:'input',...} / {t:'restart_req'}
+ * ========================================================================
+ */
+(function() {
+'use strict';
+
+// ==========================================================================
+//  模块1: 配置常量
+// ==========================================================================
+const CONFIG = {
+  CANVAS_W: 900, CANVAS_H: 600,
+  GOAL_LEFT: 300, GOAL_RIGHT: 600, GOAL_TOP: 70, GOAL_LINE: 145, GOAL_HEIGHT: 90,
+  PENALTY_SPOT_X: 450, PENALTY_SPOT_Y: 480, SHOOTER_Y: 510, KEEPER_Y: 150,
+  SHOOTER_ANGLE_SPEED: 0.6, SHOOTER_MAX_ANGLE: 28, SHOOTER_KICK_FRAMES: 18,
+  KEEPER_MOVE_SPEED: 3.5, KEEPER_DIVE_SPEED: 7,
+  KEEPER_MIN_X: 335, KEEPER_MAX_X: 565,
+  KEEPER_REACH_STAND: 28, KEEPER_REACH_DIVE: 55, KEEPER_REACH_GROUND: 48,
+  KEEPER_DIVE_FRAMES: 24,
+  BALL_RADIUS: 9, BALL_FLIGHT_FRAMES: 55,
+  BALL_LOW_HEIGHT: 8, BALL_HIGH_HEIGHT: 72,
+  TOTAL_ROUNDS: 10, ROUND_RESULT_DELAY: 90,
+  // ===== 信令服务器配置 =====
+  // 设为 '' 或 null 自动使用 PeerJS 公共信令服务器 (0.peerjs.com)
+  // 设为 'http://your-server:8080' 则使用自建信令服务器
+  // GitHub Pages 上部署时留空即可，会自动走公共信令
+  PEERJS_SERVER: '',
+  // 在线: 状态同步间隔 (每 N 帧发送一次)
+  SYNC_INTERVAL: 1,
+  COLOR: {
+    grass1: '#2d7a3e', grass2: '#266b36', grassDark: '#1a5226',
+    line: 'rgba(255,255,255,0.7)', goalPost: '#f8fafc', goalNet: 'rgba(255,255,255,0.25)',
+    shooter: '#3b82f6', shooterDark: '#1e40af',
+    keeper: '#f59e0b', keeperDark: '#b45309',
+    ball: '#f8fafc', ballPattern: '#1e293b', shadow: 'rgba(0,0,0,0.35)',
+  }
+};
+
+// ==========================================================================
+//  模块2: 状态枚举
+// ==========================================================================
+const STATE = {
+  MENU: 'menu', COUNTDOWN: 'countdown',
+  AIMING: 'aiming', SHOOTING: 'shooting',
+  ROUND_RESULT: 'round_result', GAME_OVER: 'game_over',
+};
+
+// 游戏模式
+const MODE = { LOCAL: 'local', ONLINE_HOST: 'online_host', ONLINE_GUEST: 'online_guest' };
+
+// ==========================================================================
+//  模块3: NetSync — PeerJS P2P 连接管理
+// ==========================================================================
+const NetSync = {
+  peer: null,
+  conn: null,
+  isHost: false,
+  myRole: null,        // 'shooter' | 'keeper' | null (本地模式)
+  opponentRole: null,
+  connected: false,
+  roomId: null,
+  latestSync: null,    // Guest: 最新收到的状态
+  syncFrame: 0,
+  ping: 0,
+  _pingSent: 0,
+  _closing: false,       // 主动断开中，避免 onDisconnect 误弹窗
+  _wasConnected: false, // 是否真正建立过连接
+  _hostTimeout: null,   // Host 创建房间超时计时器
+
+  /** Host: 初始化 Peer，等待 Guest 连接 */
+  initHost() {
+    this.isHost = true;
+    this.peer = new Peer(this._getPeerConfig());
+    this.peer.on('open', (id) => {
+      this.roomId = id;
+      Lobby.onRoomCreated(id);
+    });
+    this.peer.on('connection', (conn) => {
+      this.conn = conn;
+      this.setupConnection();
+    });
+    this.peer.on('error', (err) => {
+      console.error('PeerJS error:', err);
+      if (this._hostTimeout) { clearTimeout(this._hostTimeout); this._hostTimeout = null; }
+      Lobby.onError(err.type || 'unknown');
+    });
+    this.peer.on('disconnected', () => {
+      Lobby.onError('与信令服务器断开');
+    });
+    // 10秒未拿到房间ID则提示超时
+    this._hostTimeout = setTimeout(() => {
+      if (!this.roomId) {
+        Lobby.onError('连接信令服务器超时，请检查网络');
+      }
+    }, 10000);
+  },
+
+  /** Guest: 初始化 Peer，连接到 Host */
+  initGuest(roomId) {
+    this.isHost = false;
+    this.roomId = roomId;
+    this.peer = new Peer(this._getPeerConfig());
+    this.peer.on('open', () => {
+      this.conn = this.peer.connect(roomId, { reliable: true });
+      this.setupConnection();
+    });
+    this.peer.on('error', (err) => {
+      console.error('PeerJS error:', err);
+      let msg = err.type || 'unknown';
+      if (err.type === 'peer-unavailable') msg = '房间不存在或已关闭';
+      Lobby.onError(msg);
+    });
+  },
+
+  /**
+   * 自动检测 PeerJS 信令服务器配置
+   * 优先级: CONFIG.PEERJS_SERVER > 同源 /peerjs > 公共信令 (0.peerjs.com)
+   * - 设了自定义 URL → 用自定义
+   * - localhost/局域网 → 自动走同源 /peerjs（自建信令）
+   * - GitHub Pages / 其他静态托管 → 自动走公共信令
+   * - file:// → 走公共信令（不稳定，仅测试用）
+   */
+  _getPeerConfig() {
+    // 1. 用户手动指定了服务器
+    if (CONFIG.PEERJS_SERVER) {
+      try {
+        const u = new URL(CONFIG.PEERJS_SERVER);
+        return {
+          host: u.hostname,
+          port: u.port || (u.protocol === 'https:' ? 443 : 80),
+          path: u.pathname || '/',
+          secure: u.protocol === 'https:',
+        };
+      } catch (e) {
+        console.warn('PEERJS_SERVER 格式无效，回退公共信令:', CONFIG.PEERJS_SERVER);
+      }
+    }
+
+    const proto = window.location.protocol;
+    const hn = window.location.hostname;
+
+    // 2. file:// 协议 — 公共信令
+    if (proto === 'file:') {
+      console.warn('file:// 协议检测到，使用 PeerJS 公共信令服务器。建议通过 http(s):// 访问。');
+      return {};
+    }
+
+    // 3. 本地开发 (localhost / 127.x / 192.168.x / 10.x / 172.16-31.x) — 走同源自建信令
+    if (hn === 'localhost' || hn.startsWith('127.') || hn.startsWith('192.168.') || hn.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(hn)) {
+      return {
+        host: hn,
+        port: window.location.port || (proto === 'https:' ? 443 : 80),
+        path: '/peerjs',
+        secure: proto === 'https:',
+      };
+    }
+
+    // 4. GitHub Pages / 公网静态托管 — 公共信令 (同源没有 Node.js 后端)
+    console.log('检测到公网静态托管（' + hn + '），使用 PeerJS 公共信令服务器。');
+    return {};
+  },
+
+  setupConnection() {
+    this._closing = false;
+    this._wasConnected = false;
+    this.conn.on('open', () => {
+      this.connected = true;
+      this._wasConnected = true;
+      if (this.isHost) {
+        // Host: Guest 刚连上
+        Lobby.onGuestConnected();
+      } else {
+        // Guest: 已连接到 Host
+        Lobby.onConnectedToHost();
+      }
+    });
+    this.conn.on('data', (data) => { this.onMessage(data); });
+    this.conn.on('close', () => { this.onDisconnect(); });
+    this.conn.on('error', (err) => { console.error('Conn error:', err); });
+  },
+
+  /** 发送消息 */
+  send(msg) {
+    if (this.conn && this.conn.open) {
+      this.conn.send(msg);
+    }
+  },
+
+  /** Host: 发送完整状态快照 */
+  sendState() {
+    if (!this.connected || !this.isHost) return;
+    this.syncFrame++;
+    if (this.syncFrame % CONFIG.SYNC_INTERVAL !== 0) return;
+    this.send({
+      t: 'sync',
+      state: Game.state,
+      round: Game.round,
+      shooterScore: Game.shooterScore,
+      keeperScore: Game.keeperScore,
+      ball: { x: Ball.x, y: Ball.y, z: Ball.z, isFlying: Ball.isFlying, spin: Ball.spin },
+      shooter: { angle: Shooter.angle, isHigh: Shooter.isHigh, isKicking: Shooter.isKicking, kickFrame: Shooter.kickFrame },
+      keeper: { x: Keeper.x, diveState: Keeper.diveState, diveFrame: Keeper.diveFrame, isDiving: Keeper.isDiving, isQuickDive: Keeper.isQuickDive, offsetX: Keeper.offsetX, offsetY: Keeper.offsetY },
+      results: Game.roundResults,
+      resultType: Game.resultType,
+      resultTimer: Game.resultTimer,
+    });
+  },
+
+  /** Guest: 发送输入 */
+  sendInput(input) {
+    if (!this.connected || this.isHost) return;
+    this.send({ t: 'input', input: input });
+  },
+
+  /** 消息处理 */
+  onMessage(msg) {
+    switch (msg.t) {
+      case 'sync':
+        // Guest: 接收状态
+        this.latestSync = msg;
+        break;
+      case 'input':
+        // Host: 接收 Guest 输入
+        RemoteInput.apply(msg.input);
+        break;
+      case 'ready':
+        // Host: Guest 已就绪
+        Lobby.onGuestReady(msg.role);
+        break;
+      case 'countdown':
+        // Guest: 倒计时
+        UI.showCountdown(msg.n);
+        break;
+      case 'start':
+        // Guest: 游戏开始
+        UI.hideCountdown();
+        Game.beginPlay();
+        break;
+      case 'role':
+        // Guest: 角色确认
+        this.myRole = msg.role;
+        this.opponentRole = msg.role === 'shooter' ? 'keeper' : 'shooter';
+        break;
+      case 'gameover':
+        // Guest: 游戏结束
+        UI.showGameOver(msg.shooterScore, msg.keeperScore);
+        break;
+      case 'restart':
+        // Guest: 重开
+        UI.hide('gameover-screen');
+        Game.beginPlay();
+        break;
+      case 'restart_req':
+        // Host: Guest 请求重开 → Host 重开并通知 Guest
+        if (Game.state === STATE.GAME_OVER) {
+          UI.hide('gameover-screen');
+          NetSync.send({ t: 'restart' });
+          Game.beginPlay();
+        }
+        break;
+    }
+  },
+
+  onDisconnect() {
+    const wasConnected = this.connected || this._wasConnected;
+    this.connected = false;
+    this._wasConnected = false;
+
+    // 主动返回菜单时不弹窗；从未真正连接成功时不弹窗；已在菜单时不弹窗
+    if (this._closing || !wasConnected || Game.state === STATE.MENU) {
+      return;
+    }
+
+    if (Game.mode !== MODE.LOCAL) {
+      UI.show('disconnect-modal');
+      Game.state = STATE.MENU;
+    }
+  },
+
+  /** 断开连接 */
+  destroy() {
+    this._closing = true;
+    if (this._hostTimeout) { clearTimeout(this._hostTimeout); this._hostTimeout = null; }
+    if (this.conn) { this.conn.close(); this.conn = null; }
+    if (this.peer) { this.peer.destroy(); this.peer = null; }
+    this.connected = false;
+    this.isHost = false;
+    this.myRole = null;
+    this.opponentRole = null;
+    this.roomId = null;
+    this.latestSync = null;
+    this._wasConnected = false;
+  },
+};
+
+// ==========================================================================
+//  模块4: Lobby — 房间系统
+// ==========================================================================
+const Lobby = {
+  selectedRole: null,
+
+  startCreate() {
+    UI.hide('lobby-screen');
+    UI.show('role-screen');
+  },
+
+  selectRole(role) {
+    this.selectedRole = role;
+    UI.hide('role-screen');
+    UI.show('waiting-screen');
+    NetSync.myRole = role;
+    NetSync.opponentRole = role === 'shooter' ? 'keeper' : 'shooter';
+    NetSync.initHost();
+  },
+
+  onRoomCreated(roomId) {
+    // 生成邀请链接
+    const baseUrl = window.location.origin + window.location.pathname;
+    const inviteUrl = `${baseUrl}?room=${roomId}&role=${NetSync.opponentRole}`;
+    document.getElementById('invite-link-input').value = inviteUrl;
+    document.getElementById('room-code-display').textContent = roomId;
+    // 更新等待状态
+    const status = document.getElementById('waiting-conn-status');
+    if (status) {
+      status.className = 'conn-status';
+      status.textContent = '✅ 房间已创建，等待好友加入...';
+    }
+  },
+
+  copyLink() {
+    const input = document.getElementById('invite-link-input');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => {
+      this._toast('链接已复制!');
+    }).catch(() => {
+      document.execCommand('copy');
+      this._toast('链接已复制!');
+    });
+  },
+
+  copyRoomCode() {
+    const code = document.getElementById('room-code-display').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+      this._toast('房间码已复制!');
+    }).catch(() => {
+      this._toast('复制失败，请手动复制');
+    });
+  },
+
+  onGuestConnected() {
+    // Host: Guest 刚连上，还没 ready
+    document.getElementById('waiting-conn-status').className = 'conn-status connected';
+    document.getElementById('waiting-conn-status').textContent = '✅ 对手已连接! 等待准备...';
+  },
+
+  onGuestReady(guestRole) {
+    // Host: Guest 已就绪，发送角色确认并开始倒计时
+    NetSync.send({ t: 'role', role: guestRole });
+    // 开始倒计时
+    this.startCountdown();
+  },
+
+  startCountdown() {
+    UI.hide('waiting-screen');
+    UI.show('game-screen');
+    UI.setupRoleUI();
+    Game.mode = MODE.ONLINE_HOST;
+    Game.state = STATE.COUNTDOWN;
+    let n = 3;
+    const tick = () => {
+      if (n > 0) {
+        UI.showCountdown(n);
+        NetSync.send({ t: 'countdown', n: n });
+        n--;
+        setTimeout(tick, 1000);
+      } else {
+        UI.hideCountdown();
+        NetSync.send({ t: 'start' });
+        Game.beginPlay();
+      }
+    };
+    tick();
+  },
+
+  showJoin() {
+    UI.hide('lobby-screen');
+    UI.show('join-screen');
+  },
+
+  doJoin() {
+    const roomId = document.getElementById('join-room-id').value.trim();
+    if (!roomId) return;
+    // 从 URL 参数获取角色，或默认 keeper
+    const params = new URLSearchParams(window.location.search);
+    const role = params.get('role') || 'keeper';
+    NetSync.myRole = role;
+    NetSync.opponentRole = role === 'shooter' ? 'keeper' : 'shooter';
+    document.getElementById('join-conn-status').className = 'conn-status connecting';
+    document.getElementById('join-conn-status').textContent = '⏳ 连接中...';
+    document.getElementById('join-conn-status').classList.remove('hidden');
+    NetSync.initGuest(roomId);
+  },
+
+  /** Guest: 连接到 Host 成功后自动发送 ready */
+  onConnectedToHost() {
+    UI.hide('join-screen');
+    UI.show('game-screen');
+    UI.setupRoleUI();
+    Game.mode = MODE.ONLINE_GUEST;
+    // 发送 ready + 自己的角色
+    NetSync.send({ t: 'ready', role: NetSync.myRole });
+    document.getElementById('conn-text').textContent = '等待主机...';
+  },
+
+  cancelWaiting() {
+    NetSync.destroy();
+    this.backToMenu();
+  },
+
+  onError(msg) {
+    // 优先显示在等待屏幕（房主），否则加入屏幕（访客）
+    const waitingEl = document.getElementById('waiting-conn-status');
+    const joinEl = document.getElementById('join-conn-status');
+    if (waitingEl && !waitingEl.closest('.hidden')) {
+      waitingEl.className = 'conn-status error';
+      waitingEl.textContent = '❌ 错误: ' + msg;
+    } else if (joinEl) {
+      joinEl.className = 'conn-status error';
+      joinEl.textContent = '❌ 错误: ' + msg;
+      joinEl.classList.remove('hidden');
+    }
+  },
+
+  backToMenu() {
+    NetSync.destroy();
+    Game.mode = null;
+    Game.state = STATE.MENU;
+    UI.hideAll();
+    UI.show('lobby-screen');
+    // 明确隐藏断线弹窗，防止 destroy 的 close 事件重新触发显示
+    UI.hide('disconnect-modal');
+    // 清除 URL 参数
+    if (window.location.search) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  },
+
+  _toast(msg) {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.4);color:#22d3ee;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;z-index:300;animation:floatPop 2s ease-out forwards';
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+  },
+};
+
+// ==========================================================================
+//  模块5: Input — 键盘输入 (本地)
+// ==========================================================================
+const Input = {
+  keys: {},
+  keyPressed: {},
+
+  init() {
+    window.addEventListener('keydown', (e) => {
+      if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+      if (!this.keys[e.code]) this.keyPressed[e.code] = true;
+      this.keys[e.code] = true;
+    });
+    window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+  },
+
+  clearPressed() { this.keyPressed = {}; },
+  isDown(code) { return !!this.keys[code]; },
+  wasPressed(code) { return !!this.keyPressed[code]; },
+
+  /** 获取射手输入 */
+  getShooterInput() {
+    return {
+      aimLeft: this.isDown('KeyA'),
+      aimRight: this.isDown('KeyD'),
+      toggleHeight: this.wasPressed('KeyW'),
+      kick: this.wasPressed('Space'),
+    };
+  },
+
+  /** 获取门将输入 */
+  getKeeperInput() {
+    return {
+      moveLeft: this.isDown('ArrowLeft'),
+      moveRight: this.isDown('ArrowRight'),
+      diveUp: this.wasPressed('ArrowUp'),
+      diveDown: this.wasPressed('ArrowDown'),
+      quickDive: this.isDown('ShiftLeft') || this.isDown('ShiftRight'),
+    };
+  },
+};
+
+// ==========================================================================
+//  模块6: TouchControls — 触摸按钮 → Input 标志映射
+//  设计: 触摸按钮直接设置 Input.keys / Input.keyPressed,
+//  使游戏逻辑无需感知输入来源 (键盘/触摸/网络)
+// ==========================================================================
+const TouchControls = {
+  active: false,
+
+  init() {
+    this.active = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    if (!this.active) return;
+
+    // 隐藏键盘提示
+    document.getElementById('keyboard-hints').classList.add('hidden');
+
+    document.querySelectorAll('.touch-btn').forEach(btn => {
+      const action = btn.dataset.action;
+      const codeMap = {
+        'aim_left': 'KeyA', 'aim_right': 'KeyD',
+        'toggle_height': 'KeyW', 'kick': 'Space',
+        'move_left': 'ArrowLeft', 'move_right': 'ArrowRight',
+        'dive_up': 'ArrowUp', 'dive_down': 'ArrowDown',
+        'quick_dive': 'ShiftLeft',
+      };
+      const code = codeMap[action];
+      if (!code) return;
+
+      // 一次性触发按键
+      const isOneShot = ['KeyW', 'Space', 'ArrowUp', 'ArrowDown'].includes(code);
+
+      const onDown = (e) => {
+        e.preventDefault();
+        btn.classList.add('pressed');
+        if (isOneShot) {
+          Input.keyPressed[code] = true;
+        } else {
+          Input.keys[code] = true;
+        }
+        // 触觉反馈
+        if (navigator.vibrate) navigator.vibrate(10);
+      };
+      const onUp = (e) => {
+        e.preventDefault();
+        btn.classList.remove('pressed');
+        if (!isOneShot) {
+          Input.keys[code] = false;
+        }
+      };
+
+      btn.addEventListener('touchstart', onDown, { passive: false });
+      btn.addEventListener('touchend', onUp, { passive: false });
+      btn.addEventListener('touchcancel', onUp, { passive: false });
+      // 鼠标也能点 (桌面测试)
+      btn.addEventListener('mousedown', onDown);
+      btn.addEventListener('mouseup', onUp);
+      btn.addEventListener('mouseleave', onUp);
+    });
+  },
+
+  /** 根据角色显示对应触摸控制 */
+  showForRole(role) {
+    if (!this.active) return;
+    document.getElementById('touch-shooter').classList.toggle('active', role === 'shooter');
+    document.getElementById('touch-keeper').classList.toggle('active', role === 'keeper');
+  },
+
+  hide() {
+    document.getElementById('touch-shooter').classList.remove('active');
+    document.getElementById('touch-keeper').classList.remove('active');
+  },
+};
+
+// ==========================================================================
+//  模块7: RemoteInput — Guest 的输入存储 (供 Host 读取)
+// ==========================================================================
+const RemoteInput = {
+  // 射手输入
+  shooter: { aimLeft: false, aimRight: false, toggleHeight: false, kick: false },
+  // 门将输入
+  keeper: { moveLeft: false, moveRight: false, diveUp: false, diveDown: false, quickDive: false },
+
+  apply(input) {
+    // 根据 Guest 角色存储到对应对象
+    if (NetSync.opponentRole === 'shooter') {
+      // Guest 是射手, 更新射手输入 (保留一次性标志直到被消费)
+      this.shooter.aimLeft = input.aimLeft;
+      this.shooter.aimRight = input.aimRight;
+      if (input.toggleHeight) this.shooter.toggleHeight = true;
+      if (input.kick) this.shooter.kick = true;
+    } else {
+      // Guest 是门将, 更新门将输入
+      this.keeper.moveLeft = input.moveLeft;
+      this.keeper.moveRight = input.moveRight;
+      this.keeper.quickDive = input.quickDive;
+      if (input.diveUp) this.keeper.diveUp = true;
+      if (input.diveDown) this.keeper.diveDown = true;
+    }
+  },
+
+  /** 消费一次性输入 (Host 在每帧结束后调用) */
+  clearOneShots() {
+    if (NetSync.opponentRole === 'shooter') {
+      this.shooter.toggleHeight = false;
+      this.shooter.kick = false;
+    } else {
+      this.keeper.diveUp = false;
+      this.keeper.diveDown = false;
+    }
+  },
+};
+
+// ==========================================================================
+//  模块8: Game — 状态机 & 回合管理
+// ==========================================================================
+const Game = {
+  mode: null,           // MODE.LOCAL / ONLINE_HOST / ONLINE_GUEST
+  state: STATE.MENU,
+  round: 1,
+  shooterScore: 0,
+  keeperScore: 0,
+  roundResults: [],
+  resultTimer: 0,
+  resultType: '',
+
+  /** 开始本地双人模式 */
+  startLocal() {
+    this.mode = MODE.LOCAL;
+    NetSync.myRole = null;
+    UI.hide('lobby-screen');
+    UI.show('game-screen');
+    UI.setupLocalUI();
+    this.beginPlay();
+  },
+
+  /** 初始化游戏数据 */
+  beginPlay() {
+    this.shooterScore = 0;
+    this.keeperScore = 0;
+    this.round = 1;
+    this.roundResults = [];
+    this.resultTimer = 0;
+    this.resultType = '';
+    Shooter.reset();
+    Keeper.reset();
+    Ball.reset();
+    Effects.reset();
+    this.state = STATE.AIMING;
+    UI.updateScore();
+    UI.updateRound();
+    Score.updateDots();
+    UI.showAimIndicator();
+  },
+
+  nextRound() {
+    this.round++;
+    if (this.round > CONFIG.TOTAL_ROUNDS) {
+      this.endGame();
+      return;
+    }
+    Shooter.reset();
+    Keeper.reset();
+    Ball.reset();
+    this.state = STATE.AIMING;
+    UI.updateRound();
+    Score.updateDots();
+  },
+
+  endGame() {
+    this.state = STATE.GAME_OVER;
+    if (this.mode === MODE.ONLINE_HOST) {
+      NetSync.send({ t: 'gameover', shooterScore: this.shooterScore, keeperScore: this.keeperScore });
+    }
+    UI.showGameOver(this.shooterScore, this.keeperScore);
+  },
+
+  restart() {
+    if (this.mode === MODE.ONLINE_HOST) {
+      UI.hide('gameover-screen');
+      NetSync.send({ t: 'restart' });
+      this.beginPlay();
+    } else if (this.mode === MODE.ONLINE_GUEST) {
+      // Guest 请求重开
+      NetSync.send({ t: 'restart_req' });
+      document.getElementById('restart-btn').textContent = '等待主机...';
+      document.getElementById('restart-btn').disabled = true;
+    } else {
+      // 本地模式
+      UI.hide('gameover-screen');
+      this.beginPlay();
+    }
+  },
+
+  /** 获取射手输入 (统一入口) */
+  getShooterInput() {
+    if (this.mode === MODE.LOCAL) {
+      return Input.getShooterInput();
+    } else if (this.mode === MODE.ONLINE_HOST) {
+      return NetSync.myRole === 'shooter' ? Input.getShooterInput() : RemoteInput.shooter;
+    }
+    return { aimLeft: false, aimRight: false, toggleHeight: false, kick: false };
+  },
+
+  /** 获取门将输入 (统一入口) */
+  getKeeperInput() {
+    if (this.mode === MODE.LOCAL) {
+      return Input.getKeeperInput();
+    } else if (this.mode === MODE.ONLINE_HOST) {
+      return NetSync.myRole === 'keeper' ? Input.getKeeperInput() : RemoteInput.keeper;
+    }
+    return { moveLeft: false, moveRight: false, diveUp: false, diveDown: false, quickDive: false };
+  },
+};
+
+// ==========================================================================
+//  模块9: Shooter — 射手 (接受统一输入参数)
+// ==========================================================================
+const Shooter = {
+  x: CONFIG.PENALTY_SPOT_X, y: CONFIG.SHOOTER_Y,
+  angle: 0, isHigh: false, isKicking: false, kickFrame: 0,
+
+  reset() {
+    this.x = CONFIG.PENALTY_SPOT_X;
+    this.y = CONFIG.SHOOTER_Y;
+    this.angle = 0; this.isHigh = false;
+    this.isKicking = false; this.kickFrame = 0;
+    UI.updateAimIndicator(this.angle, this.isHigh);
+  },
+
+  update(input) {
+    if (Game.state !== STATE.AIMING) return;
+    if (input.aimLeft) this.angle = Math.max(-CONFIG.SHOOTER_MAX_ANGLE, this.angle - CONFIG.SHOOTER_ANGLE_SPEED);
+    if (input.aimRight) this.angle = Math.min(CONFIG.SHOOTER_MAX_ANGLE, this.angle + CONFIG.SHOOTER_ANGLE_SPEED);
+    if (input.toggleHeight) { this.isHigh = !this.isHigh; SoundFX.play('switch'); }
+    if (input.kick) this.kick();
+    UI.updateAimIndicator(this.angle, this.isHigh);
+  },
+
+  kick() {
+    this.isKicking = true; this.kickFrame = 0;
+    Game.state = STATE.SHOOTING;
+    SoundFX.play('kick');
+  },
+
+  updateKickAnimation() {
+    if (!this.isKicking) return;
+    this.kickFrame++;
+    if (this.kickFrame === 8) Ball.launch(this.angle, this.isHigh);
+    if (this.kickFrame >= CONFIG.SHOOTER_KICK_FRAMES) { this.isKicking = false; this.kickFrame = 0; }
+  },
+
+  draw(ctx) {
+    const x = this.x, y = this.y;
+    ctx.save();
+    ctx.fillStyle = CONFIG.COLOR.shadow;
+    ctx.beginPath(); ctx.ellipse(x, y + 28, 16, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+    let legAngle = 0;
+    if (this.isKicking) {
+      const t = this.kickFrame / CONFIG.SHOOTER_KICK_FRAMES;
+      if (t < 0.35) legAngle = -0.5 * (t / 0.35);
+      else if (t < 0.55) legAngle = -0.5 + 1.5 * ((t - 0.35) / 0.2);
+      else legAngle = 1.0 - 1.0 * ((t - 0.55) / 0.45);
+    }
+
+    ctx.fillStyle = CONFIG.COLOR.shooter;
+    ctx.fillRect(x - 7, y - 15, 14, 22);
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath(); ctx.arc(x, y - 22, 8, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = CONFIG.COLOR.shooterDark;
+    ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - 7, y - 10); ctx.lineTo(x - 15, y + 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 7, y - 10); ctx.lineTo(x + 15, y + 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 4, y + 7); ctx.lineTo(x - 5, y + 22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 4, y + 7);
+    ctx.lineTo(x + 4 + Math.sin(legAngle) * 18, y + 7 + Math.cos(legAngle) * 18); ctx.stroke();
+
+    if (Game.state === STATE.AIMING) {
+      ctx.strokeStyle = 'rgba(56,189,248,0.4)'; ctx.lineWidth = 2;
+      ctx.setLineDash([5, 8]);
+      ctx.beginPath(); ctx.moveTo(x, y - 10);
+      ctx.lineTo(x + Math.sin(this.angle * Math.PI / 180) * 200, y - 200); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = 'bold 11px sans-serif';
+      if (this.isHigh) { ctx.fillStyle = 'rgba(251,191,36,0.8)'; ctx.fillText('🔺高球', x + 20, y - 30); }
+      else { ctx.fillStyle = 'rgba(56,189,248,0.8)'; ctx.fillText('🔻低球', x + 20, y - 30); }
+    }
+    ctx.restore();
+  },
+};
+
+// ==========================================================================
+//  模块10: Keeper — 门将 (接受统一输入参数)
+// ==========================================================================
+const Keeper = {
+  x: CONFIG.PENALTY_SPOT_X, y: CONFIG.KEEPER_Y,
+  diveState: 'stand', diveFrame: 0, isDiving: false, isQuickDive: false,
+  offsetX: 0, offsetY: 0,
+
+  reset() {
+    this.x = CONFIG.PENALTY_SPOT_X; this.y = CONFIG.KEEPER_Y;
+    this.diveState = 'stand'; this.diveFrame = 0;
+    this.isDiving = false; this.isQuickDive = false;
+    this.offsetX = 0; this.offsetY = 0;
+  },
+
+  update(input) {
+    if (Game.state === STATE.AIMING || Game.state === STATE.SHOOTING) {
+      const speed = input.quickDive ? CONFIG.KEEPER_DIVE_SPEED : CONFIG.KEEPER_MOVE_SPEED;
+      if (input.moveLeft) this.x = Math.max(CONFIG.KEEPER_MIN_X, this.x - speed);
+      if (input.moveRight) this.x = Math.min(CONFIG.KEEPER_MAX_X, this.x + speed);
+    }
+    if (Game.state === STATE.SHOOTING && Ball.isFlying) {
+      if (input.diveUp && !this.isDiving) this.startDive('fly', input.quickDive);
+      if (input.diveDown && !this.isDiving) this.startDive('ground', input.quickDive);
+    }
+    if (this.isDiving) this.updateDiveAnimation();
+  },
+
+  startDive(type, quickDive) {
+    this.isDiving = true; this.diveFrame = 0;
+    this.isQuickDive = quickDive;
+    this.diveState = type;  // 'fly' or 'ground'
+    SoundFX.play('dive');
+  },
+
+  updateDiveAnimation() {
+    this.diveFrame++;
+    const t = this.diveFrame / CONFIG.KEEPER_DIVE_FRAMES;
+    if (this.diveState === 'fly') { this.offsetY = -30 * Math.sin(t * Math.PI); }
+    else if (this.diveState === 'ground') { this.offsetY = 10 * Math.sin(t * Math.PI); }
+    if (this.diveFrame >= CONFIG.KEEPER_DIVE_FRAMES) {
+      this.isDiving = false; this.diveState = 'stand';
+      this.isQuickDive = false; this.offsetX = 0; this.offsetY = 0;
+    }
+  },
+
+  getCollisionRange() {
+    const cx = this.x + this.offsetX;
+    let reach, zMin, zMax;
+    const boost = this.isQuickDive ? 1.3 : 1.0;
+    if (this.diveState === 'fly') { reach = (CONFIG.KEEPER_REACH_STAND + 10) * boost; zMin = 35; zMax = CONFIG.GOAL_HEIGHT; }
+    else if (this.diveState === 'ground') { reach = CONFIG.KEEPER_REACH_GROUND * boost; zMin = 0; zMax = 22; }
+    else { reach = CONFIG.KEEPER_REACH_STAND; zMin = 0; zMax = 52; }
+    return { cx, reach, zMin, zMax };
+  },
+
+  draw(ctx) {
+    const x = this.x + this.offsetX, y = this.y + this.offsetY;
+    const scale = 0.85;
+    ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+    ctx.fillStyle = CONFIG.COLOR.shadow;
+    ctx.beginPath(); ctx.ellipse(0, 30, 16, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+    let armSpread = 0;
+    if (this.diveState === 'fly') armSpread = 0.7;
+    else if (this.diveState === 'ground') armSpread = 0.5;
+
+    ctx.fillStyle = CONFIG.COLOR.keeper;
+    ctx.fillRect(-8, -16, 16, 24);
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath(); ctx.arc(0, -24, 8, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = CONFIG.COLOR.keeperDark;
+    ctx.lineWidth = 5; ctx.lineCap = 'round';
+    const armX = 18 + armSpread * 15, armY = -10 - armSpread * 10;
+    ctx.beginPath(); ctx.moveTo(-8, -10); ctx.lineTo(-armX, armY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(8, -10); ctx.lineTo(armX, armY); ctx.stroke();
+
+    ctx.lineWidth = 5;
+    if (this.diveState === 'ground') {
+      ctx.beginPath(); ctx.moveTo(-4, 8); ctx.lineTo(-14, 20); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(4, 8); ctx.lineTo(14, 20); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(-4, 8); ctx.lineTo(-5, 24); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(4, 8); ctx.lineTo(5, 24); ctx.stroke();
+    }
+    ctx.restore();
+  },
+};
+
+// ==========================================================================
+//  模块11: Ball — 足球物理
+// ==========================================================================
+const Ball = {
+  x: CONFIG.PENALTY_SPOT_X, y: CONFIG.PENALTY_SPOT_Y,
+  z: 0, isFlying: false, flightFrame: 0,
+  startX: 0, startY: 0, targetX: 0, targetY: 0,
+  maxHeight: 0, endHeight: 0, spin: 0,
+
+  reset() {
+    this.x = CONFIG.PENALTY_SPOT_X; this.y = CONFIG.PENALTY_SPOT_Y;
+    this.z = 0; this.isFlying = false; this.flightFrame = 0; this.endHeight = 0; this.spin = 0;
+  },
+
+  launch(angle, isHigh) {
+    this.startX = CONFIG.PENALTY_SPOT_X; this.startY = CONFIG.PENALTY_SPOT_Y;
+    this.targetY = CONFIG.GOAL_LINE;
+    const distance = this.startY - this.targetY;
+    this.targetX = this.startX + Math.tan(angle * Math.PI / 180) * distance;
+    this.maxHeight = isHigh ? CONFIG.BALL_HIGH_HEIGHT : CONFIG.BALL_LOW_HEIGHT;
+    this.endHeight = isHigh ? 55 : 0;
+    this.isFlying = true; this.flightFrame = 0;
+  },
+
+  update() {
+    if (!this.isFlying) return;
+    this.flightFrame++;
+    const t = this.flightFrame / CONFIG.BALL_FLIGHT_FRAMES;
+    this.x = this.startX + (this.targetX - this.startX) * t;
+    this.y = this.startY + (this.targetY - this.startY) * t;
+    this.z = 4 * this.maxHeight * t * (1 - t) + this.endHeight * t;
+    this.spin += 0.3;
+    if (this.flightFrame >= CONFIG.BALL_FLIGHT_FRAMES) {
+      this.isFlying = false;
+      Collision.check();
+    }
+  },
+
+  draw(ctx) {
+    const x = this.x, y = this.y - this.z, r = CONFIG.BALL_RADIUS;
+    ctx.save();
+    const shadowAlpha = Math.max(0.1, 0.35 - this.z / 200);
+    ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
+    ctx.beginPath(); ctx.ellipse(this.x, this.y + 2, r * 0.8, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = CONFIG.COLOR.ball;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = CONFIG.COLOR.ballPattern;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(this.spin);
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      ctx.beginPath(); ctx.arc(Math.cos(a) * r * 0.4, Math.sin(a) * r * 0.4, r * 0.28, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  },
+};
+
+// ==========================================================================
+//  模块12: Collision — 碰撞检测
+// ==========================================================================
+const Collision = {
+  check() {
+    const ballX = Ball.x, ballZ = Ball.z;
+    const inGoalX = ballX >= CONFIG.GOAL_LEFT && ballX <= CONFIG.GOAL_RIGHT;
+    const inGoalZ = ballZ >= 0 && ballZ <= CONFIG.GOAL_HEIGHT;
+    if (!inGoalX || !inGoalZ) { this.onMiss(); return; }
+    const range = Keeper.getCollisionRange();
+    const distX = Math.abs(ballX - range.cx);
+    const inX = distX <= range.reach;
+    const inZ = ballZ >= range.zMin && ballZ <= range.zMax;
+    if (inX && inZ) this.onSave(); else this.onGoal();
+  },
+  onGoal() {
+    Game.resultType = 'goal'; Game.shooterScore++; Game.roundResults.push('goal');
+    Effects.triggerGoal(); SoundFX.play('goal'); Score.onRoundEnd();
+  },
+  onSave() {
+    Game.resultType = 'save'; Game.keeperScore++; Game.roundResults.push('save');
+    Effects.triggerSave(); SoundFX.play('save'); Score.onRoundEnd();
+  },
+  onMiss() {
+    Game.resultType = 'miss'; Game.roundResults.push('miss');
+    Effects.triggerMiss(); SoundFX.play('miss'); Score.onRoundEnd();
+  },
+};
+
+// ==========================================================================
+//  模块13: Score — 计分 & 回合逻辑
+// ==========================================================================
+const Score = {
+  onRoundEnd() {
+    Game.state = STATE.ROUND_RESULT;
+    Game.resultTimer = 0;
+    UI.updateScore();
+    this.updateDots();
+  },
+  updateDots() {
+    const container = document.getElementById('round-dots');
+    container.innerHTML = '';
+    for (let i = 0; i < CONFIG.TOTAL_ROUNDS; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'round-dot';
+      if (i < Game.roundResults.length) {
+        const r = Game.roundResults[i];
+        if (r === 'goal') dot.classList.add('shooter-scored');
+        else if (r === 'save') dot.classList.add('keeper-saved');
+        else dot.classList.add('miss');
+      }
+      if (i === Game.round - 1 && Game.state !== STATE.GAME_OVER) dot.classList.add('current');
+      container.appendChild(dot);
+    }
+  },
+};
+
+// ==========================================================================
+//  模块14: Effects — 视觉特效
+// ==========================================================================
+const Effects = {
+  flashes: [], particles: [], netShake: 0,
+
+  triggerGoal() {
+    this.flashes.push({ x: (CONFIG.GOAL_LEFT + CONFIG.GOAL_RIGHT)/2, y: CONFIG.GOAL_LINE, radius: 0, maxRadius: 200, alpha: 1, color: 'rgba(251,191,36,' });
+    for (let i = 0; i < 30; i++) {
+      const a = Math.random()*Math.PI*2, s = 2+Math.random()*4;
+      this.particles.push({ x: Ball.x, y: Ball.y-Ball.z, vx: Math.cos(a)*s, vy: Math.sin(a)*s-2, life: 60, color: '#fbbf24' });
+    }
+    this.netShake = 15;
+    UI.showFloatText('GOAL!', '#fbbf24');
+  },
+  triggerSave() {
+    this.flashes.push({ x: Ball.x, y: Ball.y-Ball.z, radius: 0, maxRadius: 120, alpha: 1, color: 'rgba(56,189,248,' });
+    for (let i = 0; i < 20; i++) {
+      const a = Math.random()*Math.PI*2, s = 1+Math.random()*3;
+      this.particles.push({ x: Ball.x, y: Ball.y-Ball.z, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 40, color: '#38bdf8' });
+    }
+    UI.showFloatText('SAVE!', '#38bdf8');
+  },
+  triggerMiss() {
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random()*Math.PI*2, s = 1+Math.random()*2;
+      this.particles.push({ x: Ball.x, y: Ball.y-Ball.z, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 30, color: '#64748b' });
+    }
+    UI.showFloatText('MISS!', '#94a3b8');
+  },
+
+  update() {
+    this.flashes = this.flashes.filter(f => { f.radius += 6; f.alpha -= 0.03; return f.alpha > 0; });
+    this.particles = this.particles.filter(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life--; return p.life > 0; });
+    if (this.netShake > 0) this.netShake *= 0.85;
+  },
+
+  draw(ctx) {
+    for (const f of this.flashes) { ctx.fillStyle = f.color + f.alpha + ')'; ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2); ctx.fill(); }
+    for (const p of this.particles) { ctx.fillStyle = p.color; ctx.globalAlpha = Math.max(0, Math.min(1, p.life/60)); ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill(); }
+    ctx.globalAlpha = 1;
+  },
+
+  reset() { this.flashes = []; this.particles = []; this.netShake = 0; },
+};
+
+// ==========================================================================
+//  模块15: Render — Canvas 渲染
+// ==========================================================================
+const Render = {
+  ctx: null,
+  init() { this.ctx = document.getElementById('game-canvas').getContext('2d'); },
+
+  draw() {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, CONFIG.CANVAS_W, CONFIG.CANVAS_H);
+    this.drawField(ctx); this.drawGoal(ctx);
+    Keeper.draw(ctx); Shooter.draw(ctx); Ball.draw(ctx);
+    Effects.draw(ctx);
+  },
+
+  drawField(ctx) {
+    const grad = ctx.createLinearGradient(0, 0, 0, CONFIG.CANVAS_H);
+    grad.addColorStop(0, CONFIG.COLOR.grass2);
+    grad.addColorStop(0.4, CONFIG.COLOR.grass1);
+    grad.addColorStop(1, CONFIG.COLOR.grassDark);
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, CONFIG.CANVAS_W, CONFIG.CANVAS_H);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    for (let i = 0; i < CONFIG.CANVAS_H; i += 40) { if (Math.floor(i/40)%2===0) ctx.fillRect(0, i, CONFIG.CANVAS_W, 20); }
+
+    ctx.fillStyle = 'rgba(0,0,0,0.05)';
+    const cx = CONFIG.CANVAS_W/2;
+    for (let i = -4; i <= 4; i++) {
+      const xT = cx+i*35, xB = cx+i*70;
+      ctx.beginPath(); ctx.moveTo(xT, CONFIG.GOAL_LINE); ctx.lineTo(xT+35, CONFIG.GOAL_LINE);
+      ctx.lineTo(xB+70, CONFIG.CANVAS_H); ctx.lineTo(xB, CONFIG.CANVAS_H); ctx.closePath();
+      if (i%2===0) ctx.fill();
+    }
+
+    ctx.strokeStyle = CONFIG.COLOR.line; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(250, CONFIG.GOAL_LINE); ctx.lineTo(650, CONFIG.GOAL_LINE);
+    ctx.moveTo(250, CONFIG.GOAL_LINE); ctx.lineTo(150, CONFIG.CANVAS_H);
+    ctx.moveTo(650, CONFIG.GOAL_LINE); ctx.lineTo(750, CONFIG.CANVAS_H);
+    ctx.moveTo(150, CONFIG.CANVAS_H); ctx.lineTo(750, CONFIG.CANVAS_H); ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(340, CONFIG.GOAL_LINE); ctx.lineTo(560, CONFIG.GOAL_LINE);
+    ctx.moveTo(340, CONFIG.GOAL_LINE); ctx.lineTo(310, 240);
+    ctx.moveTo(560, CONFIG.GOAL_LINE); ctx.lineTo(590, 240);
+    ctx.moveTo(310, 240); ctx.lineTo(590, 240); ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.beginPath(); ctx.arc(CONFIG.PENALTY_SPOT_X, CONFIG.PENALTY_SPOT_Y, 4, 0, Math.PI*2); ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(CONFIG.PENALTY_SPOT_X, CONFIG.PENALTY_SPOT_Y, 50, Math.PI*1.15, Math.PI*1.85); ctx.stroke();
+  },
+
+  drawGoal(ctx) {
+    const shake = Effects.netShake;
+    const shakeX = shake > 0.5 ? (Math.random()-0.5)*shake : 0;
+    ctx.save(); ctx.translate(shakeX, 0);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(CONFIG.GOAL_LEFT, CONFIG.GOAL_TOP, CONFIG.GOAL_RIGHT-CONFIG.GOAL_LEFT, CONFIG.GOAL_LINE-CONFIG.GOAL_TOP);
+
+    ctx.strokeStyle = CONFIG.COLOR.goalNet; ctx.lineWidth = 1;
+    for (let i = 0; i <= 12; i++) {
+      const x = CONFIG.GOAL_LEFT + (i/12)*(CONFIG.GOAL_RIGHT-CONFIG.GOAL_LEFT);
+      ctx.beginPath(); ctx.moveTo(x, CONFIG.GOAL_TOP); ctx.lineTo(x, CONFIG.GOAL_LINE); ctx.stroke();
+    }
+    for (let i = 0; i <= 5; i++) {
+      const y = CONFIG.GOAL_TOP + (i/5)*(CONFIG.GOAL_LINE-CONFIG.GOAL_TOP);
+      ctx.beginPath(); ctx.moveTo(CONFIG.GOAL_LEFT, y); ctx.lineTo(CONFIG.GOAL_RIGHT, y); ctx.stroke();
+    }
+
+    ctx.strokeStyle = CONFIG.COLOR.goalPost; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(CONFIG.GOAL_LEFT, CONFIG.GOAL_LINE); ctx.lineTo(CONFIG.GOAL_LEFT, CONFIG.GOAL_TOP); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(CONFIG.GOAL_RIGHT, CONFIG.GOAL_LINE); ctx.lineTo(CONFIG.GOAL_RIGHT, CONFIG.GOAL_TOP); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(CONFIG.GOAL_LEFT, CONFIG.GOAL_TOP); ctx.lineTo(CONFIG.GOAL_RIGHT, CONFIG.GOAL_TOP); ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(CONFIG.GOAL_LEFT-10, CONFIG.GOAL_LINE); ctx.lineTo(CONFIG.GOAL_RIGHT+10, CONFIG.GOAL_LINE); ctx.stroke();
+    ctx.restore();
+  },
+};
+
+// ==========================================================================
+//  模块16: UI — DOM 界面
+// ==========================================================================
+const UI = {
+  show(id) { document.getElementById(id).classList.remove('hidden'); },
+  hide(id) { document.getElementById(id).classList.add('hidden'); },
+  hideAll() {
+    ['lobby-screen','role-screen','waiting-screen','join-screen','game-screen','gameover-screen','disconnect-modal']
+      .forEach(id => this.hide(id));
+  },
+
+  updateScore() {
+    document.getElementById('shooter-score').textContent = Game.shooterScore;
+    document.getElementById('keeper-score').textContent = Game.keeperScore;
+  },
+  updateRound() {
+    document.getElementById('current-round').textContent = Math.min(Game.round, CONFIG.TOTAL_ROUNDS);
+    Score.updateDots();
+  },
+  updateAimIndicator(angle, isHigh) {
+    document.getElementById('aim-angle-text').textContent = Math.round(angle) + '°';
+    document.getElementById('aim-height-text').textContent = isHigh ? '高球 🔺' : '低球 🔻';
+    const fill = document.getElementById('angle-bar-fill');
+    const pct = Math.abs(angle) / CONFIG.SHOOTER_MAX_ANGLE * 50;
+    if (angle < 0) { fill.style.left = (50-pct)+'%'; fill.style.width = pct+'%'; }
+    else { fill.style.left = '50%'; fill.style.width = pct+'%'; }
+  },
+
+  showAimIndicator() {
+    const isShooter = Game.mode === MODE.LOCAL ||
+      (Game.mode === MODE.ONLINE_HOST && NetSync.myRole === 'shooter') ||
+      (Game.mode === MODE.ONLINE_GUEST && NetSync.myRole === 'shooter');
+    document.getElementById('aim-indicator').classList.toggle('hidden', !isShooter);
+  },
+
+  setupRoleUI() {
+    // 在线模式: 显示当前角色的触摸控制
+    if (Game.mode === MODE.ONLINE_HOST || Game.mode === MODE.ONLINE_GUEST) {
+      TouchControls.showForRole(NetSync.myRole);
+      // 更新连接指示器
+      document.getElementById('conn-text').textContent = NetSync.connected ? '已连接' : '连接中';
+    }
+    this.showAimIndicator();
+  },
+
+  setupLocalUI() {
+    // 本地模式: 两人共用键盘，不显示触摸控制
+    TouchControls.hide();
+    document.getElementById('keyboard-hints').classList.remove('hidden');
+    document.getElementById('conn-indicator').style.display = 'none';
+    document.getElementById('aim-indicator').classList.remove('hidden');
+  },
+
+  showCountdown(n) {
+    const overlay = document.getElementById('countdown-overlay');
+    const num = document.getElementById('countdown-number');
+    overlay.classList.remove('hidden');
+    num.textContent = n;
+    // 重新触发动画
+    num.style.animation = 'none';
+    void num.offsetWidth;
+    num.style.animation = 'countdownPulse 1s ease-out';
+  },
+  hideCountdown() { this.hide('countdown-overlay'); },
+
+  showFloatText(text, color) {
+    const container = document.getElementById('canvas-container');
+    const el = document.createElement('div');
+    el.className = 'float-text'; el.textContent = text;
+    el.style.color = color; el.style.textShadow = `0 0 30px ${color}`;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
+  },
+
+  showGameOver(shooterScore, keeperScore) {
+    const winner = shooterScore > keeperScore ? '射手获胜!' : keeperScore > shooterScore ? '门将获胜!' : '平局!';
+    const winColor = shooterScore > keeperScore ? '#38bdf8' : keeperScore > shooterScore ? '#fbbf24' : '#e2e8f0';
+    document.getElementById('winner-text').textContent = winner;
+    document.getElementById('winner-text').style.color = winColor;
+    document.getElementById('final-score').textContent = `${shooterScore} : ${keeperScore}`;
+    // 重置重开按钮
+    const btn = document.getElementById('restart-btn');
+    btn.textContent = '再来一局'; btn.disabled = false;
+    this.show('gameover-screen');
+  },
+};
+
+// ==========================================================================
+//  模块17: SoundFX — 音效 (Web Audio API)
+// ==========================================================================
+const SoundFX = {
+  ctx: null, enabled: true,
+  init() {
+    document.getElementById('sound-toggle').addEventListener('click', () => {
+      this.enabled = !this.enabled;
+      document.getElementById('sound-toggle').textContent = this.enabled ? '🔊' : '🔇';
+    });
+  },
+  ensureCtx() {
+    if (!this.ctx) { try { this.ctx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){ return false; } }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    return true;
+  },
+  play(type) {
+    if (!this.enabled || !this.ensureCtx()) return;
+    switch(type) {
+      case 'kick': this._beep(150,0.12,'square',0.3); this._beep(80,0.15,'sine',0.2,0.02); break;
+      case 'goal': this._beep(523,0.1,'sine',0.25); this._beep(659,0.1,'sine',0.25,0.1); this._beep(784,0.2,'sine',0.25,0.2); this._beep(1047,0.3,'sine',0.2,0.3); break;
+      case 'save': this._noise(0.15,0.3); this._beep(200,0.1,'sawtooth',0.2); break;
+      case 'miss': this._beep(400,0.1,'triangle',0.2); this._beep(300,0.15,'triangle',0.15,0.1); this._beep(200,0.2,'triangle',0.1,0.2); break;
+      case 'dive': this._noise(0.08,0.15); break;
+      case 'switch': this._beep(600,0.05,'sine',0.1); break;
+    }
+  },
+  _beep(freq,duration,waveType,volume,delay=0) {
+    const ctx=this.ctx, osc=ctx.createOscillator(), gain=ctx.createGain();
+    osc.type=waveType; osc.frequency.value=freq;
+    gain.gain.setValueAtTime(volume, ctx.currentTime+delay);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+delay+duration);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(ctx.currentTime+delay); osc.stop(ctx.currentTime+delay+duration);
+  },
+  _noise(duration,volume) {
+    const ctx=this.ctx, bufferSize=ctx.sampleRate*duration, buffer=ctx.createBuffer(1,bufferSize,ctx.sampleRate), data=buffer.getChannelData(0);
+    for (let i=0; i<bufferSize; i++) data[i] = (Math.random()*2-1)*(1-i/bufferSize);
+    const source=ctx.createBufferSource(), gain=ctx.createGain();
+    gain.gain.value=volume; source.buffer=buffer; source.connect(gain).connect(ctx.destination); source.start();
+  },
+};
+
+// ==========================================================================
+//  模块18: GameLoop — 主循环 (Host/Guest/Local 三模式)
+// ==========================================================================
+const GameLoop = {
+  start() { requestAnimationFrame(this.loop.bind(this)); },
+
+  loop() {
+    switch (Game.mode) {
+      case MODE.LOCAL:       this.localLoop(); break;
+      case MODE.ONLINE_HOST: this.hostLoop(); break;
+      case MODE.ONLINE_GUEST: this.guestLoop(); break;
+    }
+    requestAnimationFrame(this.loop.bind(this));
+  },
+
+  /** 本地模式: 两人共用键盘 */
+  localLoop() {
+    if (Game.state === STATE.MENU) return;
+    const shooterInput = Input.getShooterInput();
+    const keeperInput = Input.getKeeperInput();
+    this._updateGame(shooterInput, keeperInput);
+    Render.draw();
+    Input.clearPressed();
+  },
+
+  /** Host 模式: 运行权威模拟, 发送状态 */
+  hostLoop() {
+    if (Game.state === STATE.MENU) return;
+    if (!NetSync.connected && Game.state !== STATE.GAME_OVER) {
+      // 等待连接中
+      Render.draw();
+      return;
+    }
+    const shooterInput = Game.getShooterInput();
+    const keeperInput = Game.getKeeperInput();
+    this._updateGame(shooterInput, keeperInput);
+    Render.draw();
+    // 发送状态给 Guest
+    NetSync.sendState();
+    // 清除一次性输入
+    Input.clearPressed();
+    RemoteInput.clearOneShots();
+  },
+
+  /** Guest 模式: 发送输入, 渲染 Host 状态 */
+  guestLoop() {
+    if (Game.state === STATE.MENU) return;
+    // 1. 读取本地输入并发送给 Host
+    const input = NetSync.myRole === 'shooter' ? Input.getShooterInput() : Input.getKeeperInput();
+    NetSync.sendInput(input);
+    // 2. 应用 Host 的最新状态
+    if (NetSync.latestSync) {
+      this._applySync(NetSync.latestSync);
+      NetSync.latestSync = null;
+    }
+    // 3. 更新本地特效
+    Effects.update();
+    // 4. 渲染
+    Render.draw();
+    // 5. 清除一次性输入
+    Input.clearPressed();
+  },
+
+  /** 核心游戏更新 (Host & Local 共用) */
+  _updateGame(shooterInput, keeperInput) {
+    switch (Game.state) {
+      case STATE.AIMING:
+        Shooter.update(shooterInput);
+        Keeper.update(keeperInput);
+        break;
+      case STATE.SHOOTING:
+        Shooter.updateKickAnimation();
+        Keeper.update(keeperInput);
+        Ball.update();
+        break;
+      case STATE.ROUND_RESULT:
+        Game.resultTimer++;
+        if (Game.resultTimer >= CONFIG.ROUND_RESULT_DELAY) Game.nextRound();
+        break;
+    }
+    Effects.update();
+  },
+
+  /** Guest: 应用 Host 状态快照 */
+  _applySync(s) {
+    // 检测事件变化 → 触发本地特效/音效
+    if (s.resultType && s.resultType !== Game.resultType) {
+      if (s.resultType === 'goal') { Effects.triggerGoal(); SoundFX.play('goal'); }
+      else if (s.resultType === 'save') { Effects.triggerSave(); SoundFX.play('save'); }
+      else if (s.resultType === 'miss') { Effects.triggerMiss(); SoundFX.play('miss'); }
+    }
+    if (s.ball.isFlying && !Ball.isFlying) { SoundFX.play('kick'); }
+    if (s.keeper.diveState !== 'stand' && s.keeper.diveState !== Keeper.diveState) { SoundFX.play('dive'); }
+    // 检测分数变化 → 更新 UI
+    if (s.shooterScore !== Game.shooterScore || s.keeperScore !== Game.keeperScore) {
+      Game.shooterScore = s.shooterScore; Game.keeperScore = s.keeperScore;
+      UI.updateScore();
+    }
+    if (s.round !== Game.round) { Game.round = s.round; UI.updateRound(); }
+
+    // 应用状态到本地对象
+    Game.state = s.state;
+    Game.resultType = s.resultType;
+    Game.resultTimer = s.resultTimer;
+    Game.roundResults = s.results;
+
+    Ball.x = s.ball.x; Ball.y = s.ball.y; Ball.z = s.ball.z;
+    Ball.isFlying = s.ball.isFlying; Ball.spin = s.ball.spin;
+
+    Shooter.angle = s.shooter.angle; Shooter.isHigh = s.shooter.isHigh;
+    Shooter.isKicking = s.shooter.isKicking; Shooter.kickFrame = s.shooter.kickFrame;
+
+    Keeper.x = s.keeper.x; Keeper.diveState = s.keeper.diveState;
+    Keeper.diveFrame = s.keeper.diveFrame; Keeper.isDiving = s.keeper.isDiving;
+    Keeper.isQuickDive = s.keeper.isQuickDive;
+    Keeper.offsetX = s.keeper.offsetX; Keeper.offsetY = s.keeper.offsetY;
+  },
+};
+
+// ==========================================================================
+//  初始化
+// ==========================================================================
+function init() {
+  Render.init();
+  Input.init();
+  TouchControls.init();
+  SoundFX.init();
+  GameLoop.start();
+
+  // 检查 URL 参数 — 是否通过邀请链接加入
+  const params = new URLSearchParams(window.location.search);
+  const roomId = params.get('room');
+  const role = params.get('role');
+
+  if (roomId && role) {
+    // 自动进入加入流程
+    NetSync.myRole = role;
+    NetSync.opponentRole = role === 'shooter' ? 'keeper' : 'shooter';
+    UI.hide('lobby-screen');
+    UI.show('join-screen');
+    document.getElementById('join-room-id').value = roomId;
+    // 自动连接
+    setTimeout(() => Lobby.doJoin(), 500);
+  }
+
+  // 暴露到全局
+  window.Lobby = Lobby;
+  window.Game = Game;
+  window.UI = UI;
+}
+
+init();
+
+// ==========================================================================
+//  ===== 可扩展接口注释 =====
+// ==========================================================================
+//
+//  1. WebSocket 服务器模式 (替代 PeerJS P2P)
+//     -------------------------------------------------------
+//     如果 PeerJS 公共信令不可用, 可部署简单 WebSocket 中继服务器:
+//
+//     // server.js (Node.js, 需 npm install ws)
+//     const WebSocket = require('ws');
+//     const rooms = new Map();
+//     const wss = new WebSocket.Server({ port: 8080 });
+//     wss.on('connection', (ws, req) => {
+//       const roomId = new URL(req.url, 'http://localhost').searchParams.get('room');
+//       if (!rooms.has(roomId)) rooms.set(roomId, []);
+//       const players = rooms.get(roomId);
+//       players.push(ws);
+//       ws.on('message', (msg) => {
+//         players.forEach(p => { if (p !== ws && p.readyState === 1) p.send(msg); });
+//       });
+//       ws.on('close', () => {
+//         rooms.set(roomId, players.filter(p => p !== ws));
+//       });
+//     });
+//
+//     客户端修改: 将 NetSync 中的 PeerJS 替换为 WebSocket:
+//     // const ws = new WebSocket('ws://server:8080?room=' + roomId);
+//     // ws.onmessage = (e) => NetSync.onMessage(JSON.parse(e.data));
+//     // NetSync.send = (msg) => ws.send(JSON.stringify(msg));
+//
+//  2. AI 守门员 / AI 射手
+//     -------------------------------------------------------
+//     在 Game.getShooterInput() / Game.getKeeperInput() 中,
+//     当模式为 AI 时返回 AI 决策:
+//     if (Game.mode === MODE.AI_KEEPER) {
+//       return AI.getKeeperInput(Ball, Keeper);
+//     }
+//
+//  3. 皮肤系统
+//     -------------------------------------------------------
+//     在 CONFIG.COLOR 中读取皮肤配置:
+//     const SKINS = { default: {...}, neon: {...} };
+//     // 切换: CONFIG.COLOR = SKINS['neon'];
+//
+//  4. 难度调节
+//     -------------------------------------------------------
+//     调整 CONFIG 中的:
+//     - KEEPER_MOVE_SPEED / KEEPER_REACH_* (门将强度)
+//     - BALL_FLIGHT_FRAMES (反应时间)
+//     - SHOOTER_MAX_ANGLE (射门精度)
+//
+//  5. 在线匹配 (随机匹配)
+//     -------------------------------------------------------
+//     使用 WebSocket 服务器做匹配:
+//     1. 玩家发送 { t:'matchmaking' } 到服务器
+//     2. 服务器将两名等待中的玩家配对
+//     3. 服务器分配房间号和角色
+//     4. 双方通过房间号建立 P2P 连接
+//
+//  6. 观战模式
+//     -------------------------------------------------------
+//     Host 发送状态给多个 Guest:
+//     NetSync.conns = [conn1, conn2, ...]; // 多连接
+//     sendState() { this.conns.forEach(c => c.send(state)); }
+//
+//  7. 回放系统
+//     -------------------------------------------------------
+//     Host 记录每帧状态: replays.push(state);
+//     回放: 逐帧应用 _applySync(replayFrame);
+//
+// ==========================================================================
+
+})();
+</script>
+</body>
+</html>
